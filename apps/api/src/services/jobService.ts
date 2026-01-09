@@ -67,16 +67,30 @@ class JobServiceImpl implements JobService<JobDocument> {
     return job;
   }
 
-  // Cache job in Redis
+  // Cache job in Redis (graceful fallback if Redis unavailable)
   async cacheJob(jobId: string, job: JobDocument): Promise<void> {
-    const redis = await getRedisClient();
-    await redis.setEx(`job:${jobId}`, 3600, JSON.stringify(job));
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.setEx(`job:${jobId}`, 3600, JSON.stringify(job));
+      }
+    } catch (error) {
+      // Silently fail - caching is optional
+      console.debug("Redis cache unavailable, skipping cache");
+    }
   }
 
   async getCachedJob(jobId: string): Promise<JobDocument | null> {
-    const redis = await getRedisClient();
-    const cached = await redis.get(`job:${jobId}`);
-    return cached ? JSON.parse(cached) : null;
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        const cached = await redis.get(`job:${jobId}`);
+        return cached ? JSON.parse(cached) : null;
+      }
+    } catch (error) {
+      // Silently fail - caching is optional
+    }
+    return null;
   }
 }
 

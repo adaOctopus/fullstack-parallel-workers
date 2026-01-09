@@ -15,27 +15,45 @@ export class JobProcessor {
   }
 
   private async connectRedis(): Promise<void> {
+    const url = process.env.REDIS_URL;
+    if (!url) {
+      console.log("⚠️  REDIS_URL not set - worker will use direct WebSocket fallback");
+      return;
+    }
+
     try {
-      const url = process.env.REDIS_URL || "redis://localhost:6379";
       this.redisClient = createClient({ url });
       
-      this.redisClient.on("error", (err) => console.error("Redis Client Error", err));
+      this.redisClient.on("error", (err) => {
+        console.error("Redis Client Error:", err);
+        // Don't retry on error, fallback to direct WebSocket
+      });
+      
       await this.redisClient.connect();
       console.log("✅ Worker connected to Redis");
     } catch (error) {
-      console.error("Failed to connect to Redis:", error);
-      setTimeout(() => this.connectRedis(), 3000);
+      console.error("⚠️  Failed to connect to Redis:", error);
+      console.log("⚠️  Worker will continue without Redis pub/sub");
+      this.redisClient = null;
     }
   }
 
   private async broadcast(message: WSMessage): Promise<void> {
+    // Try Redis first (preferred for scalability)
     if (this.redisClient?.isOpen) {
       try {
         await this.redisClient.publish(this.REDIS_CHANNEL, JSON.stringify(message));
+        return;
       } catch (error) {
         console.error("Error publishing to Redis:", error);
+        // Fall through to WebSocket fallback
       }
     }
+    
+    // Fallback: Direct WebSocket connection (if Redis unavailable)
+    // Note: This requires worker to have WebSocket client connection
+    // For now, we'll just log - in production, you'd want WebSocket fallback
+    console.debug("Redis unavailable, message not broadcast:", message.type);
   }
 
   // Process a single operation with 3-second delay

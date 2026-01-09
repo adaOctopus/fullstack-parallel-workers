@@ -30,6 +30,8 @@ app.use("/api/jobs", jobsRouter);
 async function start() {
   try {
     await connectDatabase();
+    
+    // Try to connect Redis (optional - won't crash if unavailable)
     await getRedisClient();
     
     const server = createServer(app);
@@ -43,20 +45,30 @@ async function start() {
     setGlobalWSServer(wss);
     console.log(`🔌 WebSocket server ready on ws://localhost:${PORT}`);
 
-    // Subscribe to Redis pub/sub and broadcast to WebSocket clients
+    // Subscribe to Redis pub/sub and broadcast to WebSocket clients (if Redis available)
     const subscriber = await getRedisSubscriber();
-    await subscriber.subscribe(REDIS_CHANNEL);
-    subscriber.on("message", (channel, message) => {
-      if (channel === REDIS_CHANNEL) {
-        try {
-          const wsMessage: WSMessage = JSON.parse(message);
-          wss.broadcast(wsMessage);
-        } catch (error) {
-          console.error("Error parsing Redis message:", error);
-        }
+    if (subscriber) {
+      try {
+        await subscriber.subscribe(REDIS_CHANNEL);
+        subscriber.on("message", (channel, message) => {
+          if (channel === REDIS_CHANNEL) {
+            try {
+              const wsMessage: WSMessage = JSON.parse(message);
+              wss.broadcast(wsMessage);
+            } catch (error) {
+              console.error("Error parsing Redis message:", error);
+            }
+          }
+        });
+        console.log(`📡 Subscribed to Redis channel: ${REDIS_CHANNEL}`);
+      } catch (error) {
+        console.error("⚠️  Failed to subscribe to Redis:", error);
+        console.log("⚠️  Real-time updates will work via direct WebSocket (if worker supports it)");
       }
-    });
-    console.log(`📡 Subscribed to Redis channel: ${REDIS_CHANNEL}`);
+    } else {
+      console.log("⚠️  Redis not available - pub/sub disabled");
+      console.log("⚠️  Note: Worker needs to connect directly to WebSocket for real-time updates");
+    }
 
     // Graceful shutdown
     process.on("SIGTERM", async () => {
