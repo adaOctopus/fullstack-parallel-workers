@@ -9,6 +9,7 @@ const router = Router();
 router.post("/", async (req: Request, res: Response<SafeApiResponse<{ id: string }>>) => {
   try {
     // Validate input at API boundary
+    // sEPARATED Zod validation from the db operations schema.
     const validated = validateComputeRequest(req.body);
     
     const job = await jobService.createJob(validated.numberA, validated.numberB);
