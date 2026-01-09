@@ -54,20 +54,58 @@ export class JobProcessor {
         return;
       }
 
+      // Upstash requires TLS - convert redis:// to rediss:// if needed
+      let redisUrl = url;
+      if (url.includes("upstash.io") && url.startsWith("redis://")) {
+        redisUrl = url.replace("redis://", "rediss://");
+        console.log("🔒 Converting Redis URL to TLS (rediss://) for Upstash");
+      }
+
       this.redisClient = createClient({ 
-        url,
+        url: redisUrl,
         socket: {
-          reconnectStrategy: false, // Don't auto-reconnect, use WebSocket fallback
+          connectTimeout: 10000, // 10 seconds
+          keepAlive: 30000, // 30 seconds
+          reconnectStrategy: (retries) => {
+            if (retries > 10) {
+              console.log("⚠️  Redis reconnection failed after 10 attempts");
+              this.redisClient = null;
+              return false; // Stop reconnecting
+            }
+            const delay = Math.min(retries * 200, 5000); // Max 5 seconds
+            console.log(`🔄 Worker Redis reconnecting (attempt ${retries}) in ${delay}ms...`);
+            return delay;
+          },
         },
       });
       
-      this.redisClient.on("error", () => {
-        // Silently fail, WebSocket will handle it
+      // Critical: Add error listener to prevent crashes
+      this.redisClient.on("error", (err) => {
+        // Log error but don't crash - prevents "Socket closed unexpectedly" from killing the worker
+        console.error("Redis Client Error (Worker):", err.message);
+        // Don't set to null immediately - let it try to reconnect
+      });
+      
+      this.redisClient.on("connect", () => {
+        console.log("✅ Worker Redis client connecting...");
+      });
+      
+      this.redisClient.on("ready", () => {
+        console.log("✅ Worker Redis client ready and connected");
+      });
+      
+      this.redisClient.on("end", () => {
+        console.log("⚠️  Worker Redis connection ended");
         this.redisClient = null;
       });
       
+      this.redisClient.on("reconnecting", (delay) => {
+        console.log(`🔄 Worker Redis reconnecting in ${delay}ms...`);
+      });
+      
+      console.log("🔌 Worker connecting to Redis...");
       await this.redisClient.connect();
-      console.log("✅ Worker connected to Redis");
+      console.log("✅ Worker connected to Redis successfully");
     } catch (error) {
       console.error("⚠️  Failed to connect to Redis:", error instanceof Error ? error.message : error);
       console.log("⚠️  Worker will use WebSocket fallback");

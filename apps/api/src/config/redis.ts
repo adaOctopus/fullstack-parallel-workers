@@ -36,34 +36,59 @@ export async function getRedisClient(): Promise<RedisClientType | null> {
       return null;
     }
 
+    // Upstash requires TLS - convert redis:// to rediss:// if needed
+    let redisUrl = url;
+    if (url.includes("upstash.io") && url.startsWith("redis://")) {
+      redisUrl = url.replace("redis://", "rediss://");
+      console.log("🔒 Converting Redis URL to TLS (rediss://) for Upstash");
+    }
+
     redisClient = createClient({ 
-      url,
+      url: redisUrl,
       socket: {
+        connectTimeout: 10000, // 10 seconds
+        keepAlive: 30000, // 30 seconds
         reconnectStrategy: (retries) => {
-          if (retries > 3) {
-            console.log("⚠️  Redis reconnection failed after 3 attempts - disabling Redis");
+          if (retries > 10) {
+            console.log("⚠️  Redis reconnection failed after 10 attempts");
             redisEnabled = false;
             return false; // Stop reconnecting
           }
-          return Math.min(retries * 100, 3000); // Exponential backoff
+          const delay = Math.min(retries * 200, 5000); // Max 5 seconds
+          console.log(`🔄 Redis reconnecting (attempt ${retries}) in ${delay}ms...`);
+          return delay;
         },
       },
     });
     
+    // Critical: Add error listener to prevent crashes
     redisClient.on("error", (err) => {
-      // Only log first error, then silence
-      if (redisEnabled) {
-        console.error("Redis Client Error:", err.message);
-        redisEnabled = false;
-      }
+      // Log error but don't crash - this prevents "Socket closed unexpectedly" from killing the app
+      console.error("Redis Client Error:", err.message);
+      // Don't immediately disable - let reconnect strategy handle it
     });
     
     redisClient.on("connect", () => {
-      console.log("✅ Connected to Redis");
+      console.log("✅ Redis client connecting...");
+    });
+    
+    redisClient.on("ready", () => {
+      console.log("✅ Redis client ready and connected");
       redisEnabled = true;
     });
+    
+    redisClient.on("end", () => {
+      console.log("⚠️  Redis connection ended");
+      redisEnabled = false;
+    });
+    
+    redisClient.on("reconnecting", (delay) => {
+      console.log(`🔄 Redis reconnecting in ${delay}ms...`);
+    });
 
+    console.log("🔌 Connecting to Redis...");
     await redisClient.connect();
+    console.log("✅ Redis client connected successfully");
     redisEnabled = true;
     return redisClient;
   } catch (error) {
@@ -91,28 +116,53 @@ export async function getRedisSubscriber(): Promise<RedisClientType | null> {
   }
 
   try {
+    // Upstash requires TLS - convert redis:// to rediss:// if needed
+    let redisUrl = url;
+    if (url.includes("upstash.io") && url.startsWith("redis://")) {
+      redisUrl = url.replace("redis://", "rediss://");
+    }
+
     redisSubscriber = createClient({ 
-      url,
+      url: redisUrl,
       socket: {
+        connectTimeout: 10000, // 10 seconds
+        keepAlive: 30000, // 30 seconds
         reconnectStrategy: (retries) => {
-          if (retries > 3) {
+          if (retries > 10) {
             return false; // Stop reconnecting
           }
-          return Math.min(retries * 100, 3000);
+          const delay = Math.min(retries * 200, 5000); // Max 5 seconds
+          return delay;
         },
       },
     });
     
+    // Critical: Add error listener to prevent crashes
     redisSubscriber.on("error", (err) => {
-      // Silently handle errors - don't spam console
-      if (redisSubscriber) {
-        redisSubscriber.quit().catch(() => {});
-        redisSubscriber = null;
-      }
+      // Log error but don't crash - prevents "Socket closed unexpectedly" from killing the app
+      console.error("Redis Subscriber Error:", err.message);
+      // Don't quit immediately - let it try to reconnect
     });
     
+    redisSubscriber.on("connect", () => {
+      console.log("✅ Redis subscriber connecting...");
+    });
+    
+    redisSubscriber.on("ready", () => {
+      console.log("✅ Redis subscriber ready and connected");
+    });
+    
+    redisSubscriber.on("end", () => {
+      console.log("⚠️  Redis subscriber connection ended");
+    });
+    
+    redisSubscriber.on("reconnecting", (delay) => {
+      console.log(`🔄 Redis subscriber reconnecting in ${delay}ms...`);
+    });
+    
+    console.log("🔌 Connecting Redis subscriber...");
     await redisSubscriber.connect();
-    console.log("✅ Redis subscriber connected");
+    console.log("✅ Redis subscriber connected successfully");
     return redisSubscriber;
   } catch (error) {
     console.error("⚠️  Failed to connect Redis subscriber:", error instanceof Error ? error.message : error);
