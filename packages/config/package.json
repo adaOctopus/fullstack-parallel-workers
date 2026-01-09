@@ -1,0 +1,6 @@
+{
+  "name": "@emma/config",
+  "version": "1.0.0",
+  "main": "./tsconfig.json",
+  "files": ["tsconfig.json", "eslint.config.js"]
+}
