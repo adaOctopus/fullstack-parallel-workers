@@ -20,12 +20,13 @@ export default function Home() {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+  // Deconstruct websocket hook
   const { messages, isConnected } = useWebSocket(wsUrl);
 
   // Process WebSocket messages
   useEffect(() => {
     if (!jobId) return;
-
+    console.log("Processing WebSocket messages at instant zero:", messages);
     messages.forEach((message) => {
       if (message.jobId !== jobId) return;
 
