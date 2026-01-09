@@ -92,8 +92,7 @@ async function start() {
     const subscriber = await getRedisSubscriber();
     if (subscriber) {
       try {
-        await subscriber.subscribe(REDIS_CHANNEL);
-        subscriber.on("message", (channel, message) => {
+        await subscriber.subscribe(REDIS_CHANNEL, (message, channel) => {
           if (channel === REDIS_CHANNEL) {
             try {
               const wsMessage: WSMessage = JSON.parse(message);

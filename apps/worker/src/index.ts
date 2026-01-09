@@ -25,17 +25,18 @@ for (const envPath of possiblePaths) {
   }
 }
 
-const MONGODB_URI = process.env.MONGODB_URI;
-if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI environment variable is not set");
-}
-
 async function start() {
   try {
     console.log("🔧 Worker starting...");
-    console.log(`📝 Environment check: MONGODB_URI=${process.env.MONGODB_URI ? "✅ Set" : "❌ Missing"}`);
+    const MONGODB_URI = process.env.MONGODB_URI;
+    if (!MONGODB_URI) {
+      throw new Error("MONGODB_URI environment variable is not set");
+    }
+    
+    console.log(`📝 Environment check: MONGODB_URI=${MONGODB_URI ? "✅ Set" : "❌ Missing"}`);
     console.log(`📝 Environment check: OPENAI_API_KEY=${process.env.OPENAI_API_KEY ? "✅ Set" : "❌ Missing"}`);
-    console.log(`📝 Environment check: WS_URL=${process.env.WS_URL || "ws://localhost:3001 (default)"}`);
+    const wsUrl = process.env.WS_URL || "ws://localhost:3001";
+    console.log(`📝 Environment check: WS_URL=${wsUrl}`);
     
     await mongoose.connect(MONGODB_URI);
     console.log("✅ Worker connected to MongoDB");
