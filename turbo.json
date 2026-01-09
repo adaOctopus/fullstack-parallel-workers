@@ -1,21 +1,51 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
+  "globalEnv": [
+    "MONGODB_URI",
+    "OPENAI_API_KEY",
+    "REDIS_URL",
+    "WS_URL",
+    "NEXT_PUBLIC_WS_URL",
+    "API_PORT",
+    "NODE_ENV"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**", "build/**"]
+      "outputs": [".next/**", "dist/**", "build/**"],
+      "env": [
+        "MONGODB_URI",
+        "OPENAI_API_KEY",
+        "REDIS_URL",
+        "WS_URL",
+        "NEXT_PUBLIC_WS_URL",
+        "API_PORT",
+        "NODE_ENV"
+      ]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "env": [
+        "MONGODB_URI",
+        "OPENAI_API_KEY",
+        "REDIS_URL",
+        "WS_URL",
+        "NEXT_PUBLIC_WS_URL",
+        "API_PORT",
+        "NODE_ENV"
+      ]
     },
     "lint": {
       "dependsOn": ["^build"]
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": [
+        "NODE_ENV"
+      ]
     },
     "type-check": {
       "dependsOn": ["^build"]

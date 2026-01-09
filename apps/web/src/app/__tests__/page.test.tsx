@@ -1,23 +1,28 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom";
 import Home from "../page";
 
 // Mock WebSocket
-global.WebSocket = class MockWebSocket {
+class MockWebSocket {
   readyState = 1;
-  onopen = null;
-  onmessage = null;
-  onerror = null;
-  onclose = null;
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onclose: (() => void) | null = null;
 
   constructor() {
     setTimeout(() => {
-      if (this.onopen) this.onopen({} as Event);
+      if (this.onopen) {
+        this.onopen({} as Event);
+      }
     }, 0);
   }
 
   send() {}
   close() {}
-} as any;
+}
+
+global.WebSocket = MockWebSocket as any;
 
 describe("Home Page", () => {
   it("renders the main heading", () => {
