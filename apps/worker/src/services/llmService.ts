@@ -1,5 +1,27 @@
+import dotenv from "dotenv";
+import { resolve } from "path";
 import OpenAI from "openai";
 import type { OperationType } from "@emma/shared";
+
+// Load .env from root directory
+const possiblePaths = [
+  resolve(process.cwd(), ".env"),
+  resolve(__dirname, "../../../.env"),
+  resolve(__dirname, "../../.env"),
+];
+
+let envLoaded = false;
+for (const envPath of possiblePaths) {
+  try {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error) {
+      envLoaded = true;
+      break;
+    }
+  } catch (e) {
+    // Try next path
+  }
+}
 
 // LLM service with type-safe operation handling
 export interface LLMComputeResult {
@@ -26,9 +48,16 @@ class LLMService {
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      throw new Error("OPENAI_API_KEY environment variable is not set");
+      console.error("❌ OPENAI_API_KEY is missing!");
+      console.error("Current working directory:", process.cwd());
+      console.error("Environment check:", {
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ? "Set" : "Missing",
+        MONGODB_URI: process.env.MONGODB_URI ? "Set" : "Missing",
+      });
+      throw new Error("OPENAI_API_KEY environment variable is not set. Check your .env file in the root directory.");
     }
     this.client = new OpenAI({ apiKey });
+    console.log("✅ LLMService initialized with OpenAI API key");
   }
 
   // Generic with Constraints: Type-safe operation computation
@@ -95,4 +124,51 @@ Return ONLY the numerical result, no explanation, no text, just the number.`;
   }
 }
 
-export const llmService = new LLMService();
+// Lazy initialization - only create when needed
+let llmServiceInstance: LLMService | null = null;
+
+export function getLLMService(): LLMService {
+  if (!llmServiceInstance) {
+    try {
+      llmServiceInstance = new LLMService();
+    } catch (error) {
+      console.error("❌ Failed to initialize LLMService:", error);
+      throw error;
+    }
+  }
+  return llmServiceInstance;
+}
+
+// Export for backward compatibility, but use getLLMService() instead
+export const llmService = {
+  compute: async <T extends OperationType>(operation: T, a: number, b: number) => {
+    try {
+      return await getLLMService().compute(operation, a, b);
+    } catch (error) {
+      console.error("LLM service unavailable, using fallback computation");
+      // Fallback to direct computation
+      let result: number;
+      switch (operation) {
+        case "add":
+          result = a + b;
+          break;
+        case "subtract":
+          result = a - b;
+          break;
+        case "multiply":
+          result = a * b;
+          break;
+        case "divide":
+          result = b !== 0 ? a / b : NaN;
+          break;
+        default:
+          throw new Error(`Unknown operation: ${operation}`);
+      }
+      return {
+        result,
+        tokensUsed: 0,
+        cost: 0,
+      };
+    }
+  },
+};

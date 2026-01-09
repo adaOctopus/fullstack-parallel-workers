@@ -23,7 +23,7 @@ export const WelcomeModal = () => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby="welcome-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Bot className="h-6 w-6 text-primary" />
@@ -31,7 +31,7 @@ export const WelcomeModal = () => {
           </DialogTitle>
         </DialogHeader>
         <div className="py-4">
-          <p className="text-sm text-muted-foreground">
+          <p id="welcome-description" className="text-sm text-muted-foreground">
             Welcome to the coolest worker app made by Tasos, a first-class fullstack dev
           </p>
         </div>

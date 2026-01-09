@@ -22,6 +22,19 @@ export class WSServer {
       this.clients.add(ws);
       console.log(`✅ WebSocket client connected. Total: ${this.clients.size}`);
 
+      // Handle messages from clients (e.g., worker sending updates)
+      ws.on("message", (data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          // If message is from worker, broadcast to all frontend clients
+          if (message.type && message.jobId) {
+            this.broadcast(message);
+          }
+        } catch (error) {
+          // Ignore invalid messages
+        }
+      });
+
       ws.on("close", () => {
         this.clients.delete(ws);
         console.log(`❌ WebSocket client disconnected. Total: ${this.clients.size}`);

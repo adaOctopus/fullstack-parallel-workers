@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+import { resolve, join } from "path";
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
@@ -6,6 +8,35 @@ import { getRedisClient, getRedisSubscriber } from "./config/redis";
 import jobsRouter from "./routes/jobs";
 import { WSServer, setGlobalWSServer } from "./websocket/websocket";
 import type { WSMessage } from "@emma/shared";
+
+// Load .env from root directory
+// Try multiple paths to find .env file
+const possiblePaths = [
+  resolve(process.cwd(), ".env"),           // Root when running from root
+  resolve(__dirname, "../../../.env"),      // From compiled dist
+  resolve(__dirname, "../../.env"),          // From src
+];
+
+let envLoaded = false;
+for (const envPath of possiblePaths) {
+  try {
+    const result = dotenv.config({ path: envPath });
+    if (!result.error) {
+      console.log(`✅ Loaded .env from: ${envPath}`);
+      envLoaded = true;
+      break;
+    }
+  } catch (e) {
+    // Try next path
+  }
+}
+
+if (!envLoaded) {
+  console.error("❌ Could not find .env file. Tried paths:", possiblePaths);
+  console.error("Current working directory:", process.cwd());
+  console.error("__dirname:", __dirname);
+}
+
 // import { authHandler } from "./config/auth";
 
 const app = express();
@@ -29,21 +60,33 @@ app.use("/api/jobs", jobsRouter);
 // Initialize services
 async function start() {
   try {
-    await connectDatabase();
+    console.log("🔧 Starting API server...");
+    console.log(`📝 Environment check: MONGODB_URI=${process.env.MONGODB_URI ? "✅ Set" : "❌ Missing"}`);
+    
+    // Connect to MongoDB first (required)
+    try {
+      await connectDatabase();
+    } catch (error) {
+      console.error("❌ MongoDB connection failed - server cannot start without database");
+      console.error("Please check your MONGODB_URI in .env file");
+      process.exit(1);
+    }
     
     // Try to connect Redis (optional - won't crash if unavailable)
     await getRedisClient();
     
+    // Create HTTP server
     const server = createServer(app);
     
-    server.listen(PORT, () => {
-      console.log(`🚀 API server running on http://localhost:${PORT}`);
-    });
-
     // WebSocket server (using same HTTP server for upgrade)
     const wss = new WSServer(server);
     setGlobalWSServer(wss);
-    console.log(`🔌 WebSocket server ready on ws://localhost:${PORT}`);
+    
+    // Start listening after everything is set up
+    server.listen(PORT, () => {
+      console.log(`🚀 API server running on http://localhost:${PORT}`);
+      console.log(`🔌 WebSocket server ready on ws://localhost:${PORT}`);
+    });
 
     // Subscribe to Redis pub/sub and broadcast to WebSocket clients (if Redis available)
     const subscriber = await getRedisSubscriber();
@@ -78,7 +121,11 @@ async function start() {
       process.exit(0);
     });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    console.error("❌ Failed to start server:", error);
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Stack trace:", error.stack);
+    }
     process.exit(1);
   }
 }
