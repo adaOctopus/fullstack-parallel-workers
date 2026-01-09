@@ -16,6 +16,11 @@ export const useWebSocket = (url: string) => {
     try {
       const ws = new WebSocket(url);
       wsRef.current = ws;
+      // Double check validation if needed
+      if (ws.readyState === WebSocket.CLOSED) {
+        setIsConnected(false);
+        throw new Error("WebSocket connection failed");
+      }
 
       ws.onopen = () => {
         setIsConnected(true);
