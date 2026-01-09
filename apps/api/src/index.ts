@@ -2,13 +2,15 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { connectDatabase } from "./config/database";
-import { getRedisClient } from "./config/redis";
+import { getRedisClient, getRedisSubscriber } from "./config/redis";
 import jobsRouter from "./routes/jobs";
 import { WSServer, setGlobalWSServer } from "./websocket/websocket";
+import type { WSMessage } from "@emma/shared";
 // import { authHandler } from "./config/auth";
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
+const REDIS_CHANNEL = "job-updates";
 
 app.use(cors());
 app.use(express.json());
@@ -40,6 +42,21 @@ async function start() {
     const wss = new WSServer(server);
     setGlobalWSServer(wss);
     console.log(`🔌 WebSocket server ready on ws://localhost:${PORT}`);
+
+    // Subscribe to Redis pub/sub and broadcast to WebSocket clients
+    const subscriber = await getRedisSubscriber();
+    await subscriber.subscribe(REDIS_CHANNEL);
+    subscriber.on("message", (channel, message) => {
+      if (channel === REDIS_CHANNEL) {
+        try {
+          const wsMessage: WSMessage = JSON.parse(message);
+          wss.broadcast(wsMessage);
+        } catch (error) {
+          console.error("Error parsing Redis message:", error);
+        }
+      }
+    });
+    console.log(`📡 Subscribed to Redis channel: ${REDIS_CHANNEL}`);
 
     // Graceful shutdown
     process.on("SIGTERM", async () => {

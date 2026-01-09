@@ -1,39 +1,40 @@
 import mongoose from "mongoose";
+import { createClient } from "redis";
 import { Job } from "../models/Job";
 import { llmService } from "./llmService";
 import type { OperationType, WSMessage } from "@emma/shared";
-import WebSocket from "ws";
 
 // Job processor with parallel execution support
 export class JobProcessor {
-  private wsClient: WebSocket | null = null;
+  private redisClient: ReturnType<typeof createClient> | null = null;
   private processingJobs: Set<string> = new Set();
+  private readonly REDIS_CHANNEL = "job-updates";
 
   constructor() {
-    this.connectWebSocket();
+    this.connectRedis();
   }
 
-  private connectWebSocket(): void {
-    const wsUrl = process.env.WS_URL || "ws://localhost:3001";
-    this.wsClient = new WebSocket(wsUrl);
-
-    this.wsClient.on("open", () => {
-      console.log("✅ Worker connected to WebSocket server");
-    });
-
-    this.wsClient.on("error", (error) => {
-      console.error("WebSocket error:", error);
-    });
-
-    this.wsClient.on("close", () => {
-      console.log("WebSocket closed, reconnecting...");
-      setTimeout(() => this.connectWebSocket(), 3000);
-    });
+  private async connectRedis(): Promise<void> {
+    try {
+      const url = process.env.REDIS_URL || "redis://localhost:6379";
+      this.redisClient = createClient({ url });
+      
+      this.redisClient.on("error", (err) => console.error("Redis Client Error", err));
+      await this.redisClient.connect();
+      console.log("✅ Worker connected to Redis");
+    } catch (error) {
+      console.error("Failed to connect to Redis:", error);
+      setTimeout(() => this.connectRedis(), 3000);
+    }
   }
 
-  private broadcast(message: WSMessage): void {
-    if (this.wsClient?.readyState === WebSocket.OPEN) {
-      this.wsClient.send(JSON.stringify(message));
+  private async broadcast(message: WSMessage): Promise<void> {
+    if (this.redisClient?.isOpen) {
+      try {
+        await this.redisClient.publish(this.REDIS_CHANNEL, JSON.stringify(message));
+      } catch (error) {
+        console.error("Error publishing to Redis:", error);
+      }
     }
   }
 
@@ -70,7 +71,7 @@ export class JobProcessor {
     });
 
     // Broadcast completion
-    this.broadcast({
+    await this.broadcast({
       type: "operation_complete",
       jobId,
       operation,
@@ -96,7 +97,7 @@ export class JobProcessor {
 
       // Update job status
       await Job.findByIdAndUpdate(jobId, { status: "processing" });
-      this.broadcast({ type: "job_created", jobId });
+      await this.broadcast({ type: "job_created", jobId });
 
       const { numberA, numberB } = job;
       const operations: OperationType[] = ["add", "subtract", "multiply", "divide"];
@@ -106,7 +107,7 @@ export class JobProcessor {
         const result = await this.processOperation(jobId, operation, numberA, numberB);
         
         // Broadcast progress after each operation
-        this.broadcast({
+        await this.broadcast({
           type: "job_progress",
           jobId,
           progress: ((index + 1) / operations.length) * 100,
@@ -125,7 +126,7 @@ export class JobProcessor {
 
       // Mark job as completed
       await Job.findByIdAndUpdate(jobId, { status: "completed" });
-      this.broadcast({
+      await this.broadcast({
         type: "job_complete",
         jobId,
         results: finalJob.results.map((r) => ({
@@ -141,7 +142,7 @@ export class JobProcessor {
       await Job.findByIdAndUpdate(jobId, {
         status: "failed",
       });
-      this.broadcast({
+      await this.broadcast({
         type: "error",
         jobId,
         error: error instanceof Error ? error.message : "Unknown error",
